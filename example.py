@@ -5,10 +5,11 @@ from sqlalchemy import (
     Table,
     event,
     create_engine,
+    select,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import Session, declarative_base
 
 # Use JSON with SQLite and JSONB with PostgreSQL.
 JSONVariant = JSON().with_variant(JSONB(), "postgresql")
@@ -69,6 +70,27 @@ def main():
     with engine.connect() as connection:
         Base.metadata.create_all(connection)
         connection.commit()
+
+    # Connect to the existing metadata_fts5 virtual table.
+    # This must be run *after* Base.create_all is called above.
+    metadata_fts5 = Table(
+        "metadata_fts5",
+        Node.metadata,
+        Column("rowid", Integer, primary_key=True),
+        Column("metadata", JSONVariant),
+    )
+    # Insert rows.
+    with Session(engine) as session:
+        for color in ["red", "green", "blue"]:
+            session.add(Node(metadata_={"color": color}))
+            session.commit()
+    # Search.
+    with Session(engine) as session:
+        statement = select(metadata_fts5.c.metadata).where(
+            metadata_fts5.c.metadata.match("red")
+        )
+        result = session.execute(statement).all()
+        print(result)
 
 
 if __name__ == "__main__":
